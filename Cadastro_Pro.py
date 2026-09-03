@@ -12,18 +12,21 @@ pyautogui.FAILSAFE = True
 # ==========================================
 # CONFIGURAÇÃO DE TEMPO DE ESPERA (EM SEGUNDOS)
 # ==========================================
-TEMPO_PARA_SALVAR = 25
+TEMPO_APOS_UPLOAD = 3  # Tempo para o sistema web processar o envio do arquivo
 
 
 # ==========================================
 # 1. MAPEAMENTO DAS COORDENADAS
 # ==========================================
-COORD_BOTAO_NOVO = (89, 235)       # Botão de '+' (Novo Cadastro)
-COORD_CAMPO_DATA = (370, 422)      # Campo 'Data *'
-COORD_CAMPO_NUMERO = (628, 421)    # Campo 'Número da Portaria'
-COORD_CAMPO_DESCRICAO = (340, 585) # Campo 'Descrição *'
-COOD_CAMPO_BOTAO_SALVAR = (134, 240) # Botão 'Salvar'
-COORD_CAMPO_CARREGAR_PDF = (427, 781)
+COORD_BOTAO_NOVO = (89, 235)                  # Botão de '+' (Novo Cadastro)
+COORD_CAMPO_DATA = (370, 422)                 # Campo 'Data *'
+COORD_CAMPO_NUMERO = (628, 421)               # Campo 'Número da Portaria'
+COORD_CAMPO_DESCRICAO = (340, 585)            # Campo 'Descrição *'
+COOD_CAMPO_BOTAO_SALVAR = (134, 240)          # Botão 'Salvar' (Topo)
+COORD_CAMPO_CARREGAR_PDF = (485, 774)         # Botão azul 'Carregar Arquivo' (Parte Inferior)
+COORD_ICONE_UPLOAD_NUVEM = (748, 492)         # Ícone de Upload (Nuvem com Seta) dentro do Popup
+COORD_PARA_ENVIAR_PDF = (1015, 558)           # Botão verde 'Enviar' na tela de confirmação
+
 
 # ==========================================
 # 2. EXTRAÇÃO DE DADOS (SUPORTA "1º DE ABRIL")
@@ -57,7 +60,6 @@ def extrair_dados_pdf(caminho_pdf):
     match_data = re.search(r'(\d{1,2}[º°]?)\s+DE\s+([A-ZÇãáâéêíóôõú]+)\s+DE\s+(\d{4})', texto_completo, re.IGNORECASE)
 
     if match_data:
-        # Limpa o símbolo º ou ° para ficar apenas o número (ex: '1º' vira '01')
         dia_raw = match_data.group(1).replace("º", "").replace("°", "").strip()
         dia = dia_raw.zfill(2)
         nome_mes = match_data.group(2).lower()
@@ -78,9 +80,9 @@ def extrair_dados_pdf(caminho_pdf):
 
 
 # ==========================================
-# 3. PREENCHIMENTO NA TELA COM FOCO SEGURO
+# 3. PREENCHIMENTO NA TELA E UPLOAD AUTOMÁTICO
 # ==========================================
-def preencher_campos(dados):
+def preencher_campos(dados, caminho_pdf_absoluto):
     # Fecha possíveis caixas abertas e volta pro topo da página
     pyautogui.press('esc')
     time.sleep(0.3)
@@ -91,7 +93,7 @@ def preencher_campos(dados):
     pyautogui.click(COORD_BOTAO_NOVO)
     time.sleep(1.0)
 
-    # 2. Preenche Data (Clica e limpa)
+    # 2. Preenche Data
     if dados["data"]:
         pyautogui.click(COORD_CAMPO_DATA)
         time.sleep(0.3)
@@ -117,25 +119,43 @@ def preencher_campos(dados):
         time.sleep(0.3)
         pyautogui.hotkey('ctrl', 'a')
         pyautogui.press('backspace')
-        pyperclip.copy(dados["descricao"])  # Copia e cola para preservar acentos e quebras
+        pyperclip.copy(dados["descricao"])
         pyautogui.hotkey('ctrl', 'v')
         time.sleep(0.3)
 
-     # Clica no botão de Salvar
-        pyautogui.click(COOD_CAMPO_BOTAO_SALVAR)
-        time.sleep(0.8)
+    # 5. Clica no botão de Salvar
+    pyautogui.click(COOD_CAMPO_BOTAO_SALVAR)
+    time.sleep(1.2)
+
+    # 6. Rola a página para baixo para acessar os botões de anexo
+    pyautogui.scroll(-1000)
+    time.sleep(0.5)
+
+    # 7. Clica no botão azul 'Carregar Arquivo' (embaixo)
+    pyautogui.click(COORD_CAMPO_CARREGAR_PDF)
+    time.sleep(1.0)
+
+    # 8. Clica no ícone de Upload (nuvem com seta para cima) dentro da caixa popup
+    pyautogui.click(COORD_ICONE_UPLOAD_NUVEM)
+    time.sleep(1.5)  # Tempo para a janela do Windows 'Abrir' carregar na tela
+
+    # 9. Copia o caminho completo do PDF para a área de transferência e cola no campo "Nome" do Windows
+    pyperclip.copy(caminho_pdf_absoluto)
+    pyautogui.hotkey('ctrl', 'v')
+    time.sleep(0.5)
     
-        #qUE ELE ARRRASTE A TELA PARA BAIXO
-        pyautogui.scroll(-1000)
-        time.sleep(0.4)
-    
-        #coordenada para subir pdf 
-        pyautogui.click(COORD_CAMPO_CARREGAR_PDF)
-        time.sleep(0.4)
-    
-        pyautogui.scroll(1000)
-        time.sleep(0.4)
-        #
+    # 10. Aperta ENTER para carregar o arquivo na janela do popup
+    pyautogui.press('enter')
+    time.sleep(1.2)
+
+    # 11. Clica no botão verde 'Enviar' para confirmar o upload do PDF
+    pyautogui.click(COORD_PARA_ENVIAR_PDF)
+    time.sleep(TEMPO_APOS_UPLOAD)
+
+    # 12. Rola a página de volta para o topo para preparar o próximo cadastro
+    pyautogui.scroll(1000)
+    time.sleep(0.5)
+
 
 # ==========================================
 # 4. ORDENAÇÃO NUMÉRICA
@@ -146,64 +166,62 @@ def extrair_numero_arquivo(nome_arquivo):
 
 
 # ==========================================
-# 5. EXECUÇÃO
+# 5. EXECUÇÃO PRINCIPAL (CORRIGIDA)
 # ==========================================
 if __name__ == "__main__":
     pasta_pdfs = r"C:\Users\MP\Desktop\PDFs_Portarias"
     
     todos_arquivos = [f for f in os.listdir(pasta_pdfs) if f.lower().endswith(".pdf")]
-    todos_arquivos.sort(key=extrair_numero_arquivo)
     
     if not todos_arquivos:
         print("Nenhum arquivo PDF foi encontrado na pasta!")
         exit()
 
-    num_minimo = extrair_numero_arquivo(todos_arquivos[0])
-    num_maximo = extrair_numero_arquivo(todos_arquivos[-1])
+    # Ordena os arquivos numericamente
+    todos_arquivos.sort(key=extrair_numero_arquivo)
 
     print("==================================================")
     print("      CONTROLE DE PREENCHIMENTO DE PORTARIAS     ")
     print("==================================================")
     print(f"Total de arquivos encontrados: {len(todos_arquivos)}")
-    print(f"Intervalo de números identificados: {num_minimo} até {num_maximo}\n")
     
-    entrada = input(f"Digite o número da portaria inicial (ou aperte ENTER para começar da {num_minimo}): ").strip()
+    # Mostra o menor e o maior número encontrado
+    num_minimo = extrair_numero_arquivo(todos_arquivos[0])
+    num_maximo = extrair_numero_arquivo(todos_arquivos[-1])
+    print(f"Intervalo de portarias: {num_minimo} até {num_maximo}\n")
+    
+    entrada = input(f"Digite o NÚMERO da portaria para iniciar (ex: 355) [ENTER para começar da {num_minimo}]: ").strip()
     
     if entrada.isdigit():
-        inicio_num = int(entrada)
+        num_alvo = int(entrada)
+        # Filtra mantendo apenas os arquivos cujo número seja MAIOR OU IGUAL ao digitado
+        arquivos = [f for f in todos_arquivos if extrair_numero_arquivo(f) >= num_alvo]
     else:
-        inicio_num = num_minimo
+        arquivos = todos_arquivos
 
-    arquivos = [f for f in todos_arquivos if extrair_numero_arquivo(f) >= inicio_num]
-    
     if not arquivos:
-        print(f"\n[AVISO] Nenhuma portaria com número maior ou igual a {inicio_num} foi encontrada.")
+        print(f"\n[AVISO] Nenhuma portaria com número igual ou superior a '{entrada}' foi encontrada.")
         exit()
 
-    print(f"\nSerão processadas {len(arquivos)} portarias a partir do Nº {extrair_numero_arquivo(arquivos[0])}.")
+    print(f"\nSerão processadas {len(arquivos)} portarias começando a partir da Nº {extrair_numero_arquivo(arquivos[0])}.")
     print("Iniciando em 7 segundos... Abra e foque na janela do navegador!")
     print("==================================================")
     time.sleep(7)
 
     total = len(arquivos)
     for idx, arquivo in enumerate(arquivos, start=1):
-        caminho_completo = os.path.join(pasta_pdfs, arquivo)
+        caminho_completo = os.path.abspath(os.path.join(pasta_pdfs, arquivo))
         num_atual = extrair_numero_arquivo(arquivo)
         
         print(f"[{idx}/{total}] Processando Portaria Nº {num_atual} ({arquivo})")
         
         try:
-            # 1. Lê e extrai os dados do PDF
             dados = extrair_dados_pdf(caminho_completo)
             print(f"  ├ Data Extraída: '{dados['data']}'")
             print(f"  ├ Nº Extraído:   '{dados['numero']}'")
             
-            # 2. Digita no sistema
-            preencher_campos(dados)
-            
-            # 3. Aguarda o tempo para você anexar o arquivo na janela
-            print(f"  └ Preenchido! Aguardando {TEMPO_PARA_SALVAR} segundos para você anexar o PDF...")
-            time.sleep(TEMPO_PARA_SALVAR)
+            preencher_campos(dados, caminho_completo)
+            print("  └ Preenchido e PDF enviado com sucesso!")
             
         except Exception as e:
             print(f"  └ [ERRO] Falha ao processar {arquivo}: {e}")
